@@ -79,12 +79,48 @@ browser ◀── SSE: meta · stage · progress · done / fail ──┘
 | `HOST` | `0.0.0.0` | Bind address (`127.0.0.1` for local-only) |
 | `YTDLP_PATH` | `yt-dlp` | Absolute path to the yt-dlp binary |
 | `GOOGLE_TRANSLATE_API_KEY` | — | Use the official Google Cloud Translation API instead of the public endpoint |
+| `YOUTUBE_COOKIES_B64` | — | Base64 Netscape cookie file, for hosts YouTube challenges |
+| `YOUTUBE_COOKIES` | — | Same cookies as raw text (alternative to base64) |
+| `YTDLP_PROXY` | — | HTTP/SOCKS proxy passed to yt-dlp (`http://user:pass@host:port`) |
 
 Example:
 
 ```bash
 PORT=8080 YTDLP_PATH=/usr/local/bin/yt-dlp npm start
 ```
+
+## Deploying to Vercel
+
+The repo is ready for Vercel: `public/` is served as a static site, `api/[...path].js`
+wraps the same HTTP handler, and the build downloads standalone Linux `yt-dlp`
+binaries (arm64 and x86_64) into the function bundle.
+
+```bash
+npx vercel --prod
+```
+
+**YouTube usually blocks cloud IPs.** From Vercel, caption requests are
+typically answered with “Sign in to confirm you’re not a bot”; Vaani then shows a
+*YouTube blocked this server* message. Captions are fetched from this
+deployment’s network, so the fix is to give yt-dlp credentials or a proxy:
+
+1. **Cookies (recommended).** Export YouTube cookies in Netscape format (for
+   example with the “Get cookies.txt LOCALLY” browser extension), then add an
+   environment variable in Vercel:
+
+   ```bash
+   base64 -i cookies.txt | tr -d '\n' | pbcopy   # copy, then paste into Vercel
+   ```
+
+   Name it `YOUTUBE_COOKIES_B64` and redeploy. Raw cookie text also works via
+   `YOUTUBE_COOKIES`. Treat these cookies like a password, and re-export them
+   when they expire.
+
+2. **Proxy.** Set `YTDLP_PROXY` to a proxy yt-dlp can use, such as
+   `http://user:pass@host:port` or `socks5://host:port`.
+
+Also note that a Hobby Vercel function stops at 60 seconds, so very long videos
+may not finish in one request there. Running the app locally has no such limit.
 
 ## API
 

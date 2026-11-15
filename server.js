@@ -1,7 +1,7 @@
 import http from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { LANGUAGES, getLanguage, isSupported, captionLanguageLabel } from './lib/languages.js';
 import { buildParagraphs } from './lib/captions.js';
@@ -61,6 +61,14 @@ function sameLanguage(a, b) {
 
 function friendlyError(error) {
   const text = `${error?.message || ''} ${error?.stderr || ''}`;
+  if (error?.code === 'HOST_BLOCKED' || /not a bot|confirm you.{0,10}re not a bot/i.test(text)) {
+    return {
+      code: 'HOST_BLOCKED',
+      title: 'YouTube blocked this server',
+      message: 'YouTube is refusing caption requests from this deployment’s network. Cloud hosts are commonly challenged this way.',
+      hint: 'Run Vaani locally for unrestricted access. If you run this deployment yourself, set YOUTUBE_COOKIES_B64 (your exported YouTube cookies) in the project’s environment variables and redeploy.'
+    };
+  }
   if (error?.code === 'NO_CAPTIONS') {
     return {
       code: 'NO_CAPTIONS',
@@ -257,8 +265,10 @@ async function runJob(stream, videoId, target) {
   stream.send('meta', { video: publicInfo(info) });
 
   if (!info.track) {
-    const error = new Error('No captions available');
-    error.code = 'NO_CAPTIONS';
+    const error = new Error(
+      info.hostBlocked ? 'YouTube requires a sign-in from this host' : 'No captions available'
+    );
+    error.code = info.hostBlocked ? 'HOST_BLOCKED' : 'NO_CAPTIONS';
     throw error;
   }
 
@@ -387,7 +397,7 @@ async function runJob(stream, videoId, target) {
 /* Request handler                                                     */
 /* ------------------------------------------------------------------ */
 
-const server = http.createServer(async (req, res) => {
+export async function handler(req, res) {
   let url;
   try {
     url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
@@ -420,6 +430,8 @@ const server = http.createServer(async (req, res) => {
         ok: true,
         ytdlp: yt.available,
         ytdlpVersion: yt.version,
+        cookies: Boolean(process.env.YOUTUBE_COOKIES_B64 || process.env.YOUTUBE_COOKIES),
+        proxy: Boolean(process.env.YTDLP_PROXY),
         languages: LANGUAGES.length,
         uptime: Math.round(process.uptime())
       });
@@ -492,23 +504,39 @@ const server = http.createServer(async (req, res) => {
     if (!res.headersSent) sendJson(res, 500, { error: 'Server error' });
     else res.end();
   }
-});
+}
 
-server.listen(PORT, HOST, () => {
-  console.log(`\n  Vaani · transcript studio`);
-  console.log(`  → http://localhost:${PORT}\n`);
-  hasYtdlp().then((yt) => {
-    console.log(
-      yt.available
-        ? `  yt-dlp ${yt.version} ready`
-        : '  yt-dlp not found — falling back to YouTube captions API'
-    );
-  });
-});
+const isDirectRun =
+  process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 
-for (const signal of ['SIGINT', 'SIGTERM']) {
-  process.on(signal, () => {
-    server.close(() => process.exit(0));
-    setTimeout(() => process.exit(0), 1200).unref();
+if (isDirectRun) {
+  const server = http.createServer(handler);
+
+  server.listen(PORT, HOST, () => {
+    console.log(`\n  Vaani · transcript studio`);
+    console.log(`  → http://localhost:${PORT}\n`);
+    hasYtdlp().then((yt) => {
+      console.log(
+        yt.available
+          ? `  yt-dlp ${yt.version} ready`
+          : '  yt-dlp not found — falling back to YouTube captions API'
+      );
+    });
   });
+
+  server.on('error', (error) => {
+    if (error.code === 'EADDRINUSE') {
+      console.error(`\n  Port ${PORT} is already in use — Vaani may already be running.`);
+      console.error(`  Open http://localhost:${PORT} or start on another port: PORT=4174 npm start\n`);
+      process.exit(1);
+    }
+    throw error;
+  });
+
+  for (const signal of ['SIGINT', 'SIGTERM']) {
+    process.on(signal, () => {
+      server.close(() => process.exit(0));
+      setTimeout(() => process.exit(0), 1200).unref();
+    });
+  }
 }

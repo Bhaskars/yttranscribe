@@ -422,6 +422,9 @@ function renderPreview(video) {
   badge.className = 'preview-badge';
   if (video.hasCaptions) {
     badge.textContent = `${video.sourceLanguage || 'Caption'} captions${video.track?.auto ? ' · auto' : ''}`;
+  } else if (video.hostBlocked) {
+    badge.classList.add('warn');
+    badge.textContent = 'YouTube is blocking this server';
   } else {
     badge.classList.add('warn');
     badge.textContent = 'No captions found';

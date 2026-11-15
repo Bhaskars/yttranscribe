@@ -7,10 +7,12 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "vercel-build": "node scripts/fetch-ytdlp.mjs",
+    "deploy": "vercel --prod"
   },
   "engines": {
-    "node": ">=18.17"
+    "node": "24.x"
   },
   "keywords": [
     "youtube",
