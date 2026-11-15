@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vaani — YouTube transcripts, translated to Tamil</title>
+  <meta name="description" content="Paste a YouTube link to get a clean transcript translated into Tamil or any of 44 other languages. Read it, copy it, download .txt or .srt, or print it.">
+  <meta name="theme-color" content="#f7f2e8">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300..700&family=Fraunces:ital,opsz,wght@0,9..144,300..700;1,9..144,300..600&family=Noto+Sans+Tamil:wght@300..700&family=Noto+Serif+Tamil:ital,wght@0,300..700;1,300..600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="grain" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Vaani home">
+      <span class="brand-mark" aria-hidden="true">வா</span>
+      <span class="brand-text">
+        <span class="brand-name">Vaani</span>
+        <span class="brand-sub">transcript studio</span>
+      </span>
+    </a>
+
+    <nav class="topbar-nav" aria-label="Primary">
+      <a class="nav-link" href="#how">How it works</a>
+      <a class="nav-link" href="#form">Open the studio</a>
+      <button class="icon-btn" id="themeBtn" type="button" aria-label="Switch to dark mode" title="Switch theme">
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="4.2"/>
+          <path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.2 5.2l1.6 1.6M17.2 17.2l1.6 1.6M18.8 5.2l-1.6 1.6M6.8 17.2l-1.6 1.6"/>
+        </svg>
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M20.4 14.2A8.4 8.4 0 0 1 9.8 3.6a8.4 8.4 0 1 0 10.6 10.6Z"/>
+        </svg>
+      </button>
+    </nav>
+  </header>
+
+  <main>
+    <section class="intro">
+      <div class="intro-copy">
+        <p class="eyebrow"><span class="pulse"></span> YouTube → transcript → translation</p>
+        <h1>Any talk,<br><em>எந்த மொழியிலும்.</em></h1>
+        <p class="lede">Paste a YouTube link and get the words out — cleanly transcribed, translated into Tamil (or any of 44 other languages), and ready to read, download, or print.</p>
+      </div>
+      <div class="hero-mark" aria-hidden="true">ழ</div>
+    </section>
+
+    <div class="workspace">
+      <aside class="panel">
+        <form id="form" novalidate>
+          <div class="field">
+            <label for="url">Video link</label>
+            <div class="input-wrap" id="inputWrap">
+              <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true">
+                <rect x="2.5" y="5" width="19" height="14" rx="3.5"/>
+                <path d="M10.4 9.2 15 12l-4.6 2.8V9.2Z" fill="currentColor" stroke="none"/>
+              </svg>
+              <input id="url" name="url" type="url" placeholder="https://youtube.com/watch?v=…" autocomplete="off" spellcheck="false" inputmode="url" aria-describedby="urlError">
+              <button class="ghost-btn" id="pasteBtn" type="button" title="Paste from clipboard">Paste</button>
+            </div>
+            <p class="field-error" id="urlError" role="alert" hidden></p>
+          </div>
+
+          <div class="field">
+            <label for="lang">Translate to</label>
+            <div class="select-wrap">
+              <select id="lang" name="lang"></select>
+              <svg class="select-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+                <path d="m6 9 6 6 6-6"/>
+              </svg>
+            </div>
+            <p class="field-note" id="langNote">Tamil is selected by default. The source language is detected automatically.</p>
+          </div>
+
+          <div class="switch-grid">
+            <label class="switch">
+              <input type="checkbox" id="bilingual">
+              <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+              <span class="switch-text">Show original</span>
+            </label>
+            <label class="switch">
+              <input type="checkbox" id="timestamps" checked>
+              <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+              <span class="switch-text">Timestamps</span>
+            </label>
+          </div>
+
+          <button class="btn-primary" id="goBtn" type="submit">
+            <span class="btn-text">Transcribe &amp; translate</span>
+            <span class="btn-loader" aria-hidden="true"></span>
+            <svg class="btn-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M4 12h15M13 5.5 19.5 12 13 18.5"/>
+            </svg>
+          </button>
+
+          <p class="fineprint">Works with videos that have captions — manual or auto-generated. Nothing is stored beyond this session.</p>
+
+          <div class="preview" id="preview" hidden aria-live="polite"></div>
+        </form>
+
+        <div class="recent" id="recentWrap" hidden>
+          <div class="recent-head">
+            <p class="mini-label">Recent</p>
+            <button class="link-btn" id="clearRecent" type="button">Clear</button>
+          </div>
+          <ul class="recent-list" id="recentList"></ul>
+        </div>
+
+        <div class="examples">
+          <p class="mini-label">Try a sample</p>
+          <div class="chips">
+            <button class="chip" type="button" data-url="https://www.youtube.com/watch?v=aircAruvnKk">
+              <span class="chip-strong">3Blue1Brown</span>
+              <span>Neural networks</span>
+            </button>
+            <button class="chip" type="button" data-url="https://www.youtube.com/watch?v=iG9CE55wbtY">
+              <span class="chip-strong">TED</span>
+              <span>Do schools kill creativity?</span>
+            </button>
+            <button class="chip" type="button" data-url="https://www.youtube.com/watch?v=5MgBikgcWnY">
+              <span class="chip-strong">Josh Kaufman</span>
+              <span>The first 20 hours</span>
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      <section class="stage" id="stage">
+        <div class="empty" id="empty">
+          <div class="specimen" aria-hidden="true">
+            <div class="specimen-head">
+              <span class="specimen-kicker">Transcript · <span class="tamil">தமிழ்</span></span>
+              <span class="specimen-live"><span class="dot"></span> ready</span>
+            </div>
+            <p class="specimen-line"><span class="specimen-time">00:12</span><span class="specimen-text">இந்த வீடியோவில், ஒரு நரம்பியல் வலையமைப்பு என்றால் என்ன என்பதைப் பார்ப்போம்.</span></p>
+            <p class="specimen-line"><span class="specimen-time">00:38</span><span class="specimen-text">ஒவ்வொரு அடுக்கும் எப்படி வேலை செய்கிறது என்பதைப் புரிந்துகொள்வோம்.</span></p>
+            <p class="specimen-line"><span class="specimen-time">01:02</span><span class="specimen-text">சிறிய எண்களால் நிரம்பிய ஒரு வலை — அவ்வளவுதான்.</span></p>
+            <div class="specimen-foot">
+              <span class="specimen-bar"></span>
+              <span class="specimen-bar short"></span>
+              <span class="specimen-tag">45 languages</span>
+            </div>
+          </div>
+
+          <div class="how" id="how">
+            <div class="how-head">
+              <h2>From link to readable text, in three steps</h2>
+              <p>No accounts, no plugins. One paste, then a document you can keep.</p>
+            </div>
+            <ol class="steps">
+              <li>
+                <span class="step-n">01</span>
+                <div>
+                  <h3>Paste the link</h3>
+                  <p>Any public YouTube video with captions — manual or auto-generated.</p>
+                </div>
+              </li>
+              <li>
+                <span class="step-n">02</span>
+                <div>
+                  <h3>Pick your language</h3>
+                  <p>Tamil is the default. Choose from 44 other Indian and world languages.</p>
+                </div>
+              </li>
+              <li>
+                <span class="step-n">03</span>
+                <div>
+                  <h3>Keep the words</h3>
+                  <p>Read on screen, copy the text, download .txt or .srt, or print a clean copy.</p>
+                </div>
+              </li>
+            </ol>
+          </div>
+        </div>
+
+        <div class="work-card" id="workCard" hidden aria-live="polite">
+          <div class="work-head">
+            <div class="work-motion" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+            <div class="work-copy">
+              <p class="mini-label">Working</p>
+              <h2 id="workTitle">Reading the video…</h2>
+            </div>
+            <p class="work-pct" id="workPct">0%</p>
+          </div>
+          <div class="bar"><span id="barFill" style="width:0%"></span></div>
+          <ol class="mini-steps" id="miniSteps">
+            <li class="active" data-step="0">Read video</li>
+            <li data-step="1">Fetch captions</li>
+            <li data-step="2">Translate</li>
+            <li data-step="3">Build document</li>
+          </ol>
+          <p class="work-note" id="workNote">Hang tight — longer videos take a little longer.</p>
+        </div>
+
+        <div class="error-card" id="errorCard" hidden role="alert">
+          <div class="error-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+              <circle cx="12" cy="12" r="9"/>
+              <path d="M12 7.5v5.2M12 16.4v.2"/>
+            </svg>
+          </div>
+          <div class="error-copy">
+            <p class="mini-label">Could not finish</p>
+            <h2 id="errorTitle">Something went wrong</h2>
+            <p id="errorMessage"></p>
+            <p class="error-hint" id="errorHint"></p>
+            <div class="error-actions">
+              <button class="btn-small btn-ink" id="retryBtn" type="button">Try again</button>
+              <button class="btn-small btn-quiet" id="dismissBtn" type="button">Dismiss</button>
+            </div>
+          </div>
+        </div>
+
+        <article class="doc" id="doc" hidden>
+          <header class="doc-head">
+            <a class="thumb" id="thumbLink" href="#" target="_blank" rel="noopener noreferrer" aria-label="Open the video on YouTube">
+              <img id="thumbImg" alt="" loading="lazy" referrerpolicy="no-referrer">
+              <span class="thumb-play" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5-11-6.5Z"/></svg>
+              </span>
+            </a>
+            <div class="doc-id">
+              <p class="doc-kicker">
+                <span class="lang-badge" id="docLangBadge">தமிழ்</span>
+                <span class="doc-source" id="docSource"></span>
+              </p>
+              <h2 id="docTitle">Transcript</h2>
+              <p class="doc-sub">
+                <span id="docChannel"></span>
+                <span class="dot-sep" aria-hidden="true">·</span>
+                <span id="docDuration"></span>
+                <span class="dot-sep" aria-hidden="true">·</span>
+                <span id="docStats"></span>
+              </p>
+            </div>
+          </header>
+
+          <div class="doc-tools">
+            <div class="doc-tools-left">
+              <div class="progress-inline" id="docProgress" hidden>
+                <span class="typing" aria-hidden="true"><i></i><i></i><i></i></span>
+                <span id="docProgressText">Fetching captions…</span>
+              </div>
+              <div class="font-controls" aria-label="Text size">
+                <button type="button" class="font-btn" id="fontDown" aria-label="Decrease text size">A−</button>
+                <button type="button" class="font-btn" id="fontUp" aria-label="Increase text size">A+</button>
+              </div>
+            </div>
+            <div class="doc-actions">
+              <button class="tool" type="button" data-act="copy" id="copyBtn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 5.5A2.5 2.5 0 0 0 12.5 3H6a3 3 0 0 0-3 3v6.5A2.5 2.5 0 0 0 5.5 15"/></svg>
+                <span>Copy</span>
+              </button>
+              <button class="tool" type="button" data-act="txt" id="txtBtn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5v11M7.5 10 12 14.5 16.5 10"/><path d="M5 16.5v2A2.5 2.5 0 0 0 7.5 21h9a2.5 2.5 0 0 0 2.5-2.5v-2"/></svg>
+                <span>.txt</span>
+              </button>
+              <button class="tool" type="button" data-act="srt" id="srtBtn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5v11M7.5 10 12 14.5 16.5 10"/><path d="M5 16.5v2A2.5 2.5 0 0 0 7.5 21h9a2.5 2.5 0 0 0 2.5-2.5v-2"/></svg>
+                <span>.srt</span>
+              </button>
+              <button class="tool tool-accent" type="button" data-act="print" id="printBtn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 8.5V3.5h10v5"/><rect x="3.5" y="8.5" width="17" height="8" rx="2"/><path d="M7 14h10v6.5H7z"/></svg>
+                <span>Print / PDF</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="warn-banner" id="warnBanner" hidden></div>
+
+          <div class="lang-prompt" id="langPrompt" hidden>
+            <span id="langPromptText">This document is in Tamil.</span>
+            <button class="btn-small btn-ink" id="langSwitchBtn" type="button">Translate it</button>
+          </div>
+
+          <div class="doc-body" id="docBody" lang="ta"></div>
+
+          <footer class="doc-foot">
+            <span class="doc-foot-brand">Made with Vaani</span>
+            <span class="doc-foot-url" id="docUrl"></span>
+          </footer>
+        </article>
+      </section>
+    </div>
+  </main>
+
+  <footer class="site-foot">
+    <div class="site-foot-left">
+      <span class="brand-mark small" aria-hidden="true">வா</span>
+      <p>Vaani · for reading, listening, keeping.<br><span class="muted">Captions come from YouTube. Machine translation is a first draft, not a final word.</span></p>
+    </div>
+    <p class="site-foot-right">Tamil first. 44 more close behind.</p>
+  </footer>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <noscript>
+    <div class="noscript">Vaani needs JavaScript to prepare transcripts. Please enable it and reload.</div>
+  </noscript>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

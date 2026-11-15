@@ -1,0 +1,23 @@
+{
+  "name": "vaani-transcript-studio",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Paste a YouTube link, get a clean transcript translated into Tamil (or 40+ other languages), ready to download or print.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=18.17"
+  },
+  "keywords": [
+    "youtube",
+    "transcript",
+    "tamil",
+    "translation",
+    "srt"
+  ],
+  "license": "MIT"
+}
