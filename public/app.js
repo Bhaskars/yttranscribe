@@ -24,6 +24,13 @@ const state = {
   chaptersEmitted: new Set(),
   lastChapterStart: -1,
   lastUrl: '',
+  lastMode: 'youtube',
+  mode: 'youtube',
+  file: null,
+  uploadAbort: null,
+  maxUploadMb: 600,
+  uploadsAvailable: true,
+  uploadIssue: '',
   jobLang: 'ta',
   previewAbort: null,
   previewTimer: null,
@@ -38,6 +45,20 @@ const el = {
   inputWrap: $('#inputWrap'),
   pasteBtn: $('#pasteBtn'),
   urlError: $('#urlError'),
+  tabYt: $('#tabYt'),
+  tabUpload: $('#tabUpload'),
+  youtubeField: $('#youtubeField'),
+  uploadField: $('#uploadField'),
+  dropzone: $('#dropzone'),
+  fileInput: $('#fileInput'),
+  dropTitle: $('#dropTitle'),
+  dropNote: $('#dropNote'),
+  uploadSelected: $('#uploadSelected'),
+  uploadName: $('#uploadName'),
+  clearFile: $('#clearFile'),
+  uploadError: $('#uploadError'),
+  uploadNote: $('#uploadNote'),
+  fineprint: $('#fineprint'),
   preview: $('#preview'),
   lang: $('#lang'),
   langNote: $('#langNote'),
@@ -320,6 +341,198 @@ function updateLangPrompt() {
 }
 
 /* ------------------------------------------------------------------ */
+/* Source mode: YouTube link or uploaded file                          */
+/* ------------------------------------------------------------------ */
+
+const UPLOAD_ACCEPT = /\.(mp4|m4v|mov|webm|mkv|avi|mpe?g|mp3|wav|m4a|aac|ogg|oga|opus|flac)$/i;
+
+function formatBytes(bytes) {
+  const value = Math.max(0, Number(bytes) || 0);
+  if (value < 1024) return `${value} B`;
+  const units = ['KB', 'MB', 'GB'];
+  let size = value / 1024;
+  let index = 0;
+  while (size >= 1024 && index < units.length - 1) {
+    size /= 1024;
+    index += 1;
+  }
+  return `${size >= 100 ? Math.round(size) : size.toFixed(1)} ${units[index]}`;
+}
+
+function isMediaFile(file) {
+  if (!file) return false;
+  const type = String(file.type || '');
+  if (type.startsWith('video/') || type.startsWith('audio/')) return true;
+  return UPLOAD_ACCEPT.test(file.name || '');
+}
+
+function maxUploadLabel() {
+  return `${state.maxUploadMb} MB`;
+}
+
+function updateUploadCopy() {
+  if (state.file) {
+    el.dropNote.textContent = `${formatBytes(state.file.size)} · max ${maxUploadLabel()} · click to change`;
+  } else {
+    el.dropNote.textContent = `or click to browse · MP4, MOV, MP3, WAV · up to ${maxUploadLabel()}`;
+  }
+
+  el.uploadNote.textContent = state.uploadsAvailable
+    ? `Transcribed with Whisper on this server, then deleted — nothing is stored. Maximum ${maxUploadLabel()}.`
+    : state.uploadIssue ||
+      `Uploads need Whisper on the server. Maximum ${maxUploadLabel()}.`;
+  el.uploadNote.classList.toggle('warn', !state.uploadsAvailable);
+
+  if (!state.running) {
+    el.goBtn.disabled = state.mode === 'upload' && !state.uploadsAvailable;
+  }
+}
+
+async function loadCapabilities() {
+  try {
+    const res = await fetch('/api/health', { cache: 'no-store' });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (Number(data.maxUploadMb) > 0) state.maxUploadMb = Number(data.maxUploadMb);
+    state.uploadsAvailable = Boolean(data.whisper && data.ffmpeg);
+    if (!state.uploadsAvailable) {
+      state.uploadIssue =
+        'Uploads are unavailable on this deployment — it has no Whisper. Run Vaani locally to transcribe your own files.';
+    }
+  } catch {
+    /* keep the defaults; the server still enforces its limit */
+  }
+  updateUploadCopy();
+}
+
+function showUploadError(message) {
+  el.uploadError.hidden = false;
+  el.uploadError.textContent = message;
+  el.dropzone.classList.add('invalid');
+}
+
+function clearUploadError() {
+  el.uploadError.hidden = true;
+  el.uploadError.textContent = '';
+  el.dropzone.classList.remove('invalid');
+}
+
+function setFile(file) {
+  clearUploadError();
+
+  if (!file) {
+    state.file = null;
+    el.fileInput.value = '';
+    el.dropzone.classList.remove('has-file');
+    el.dropTitle.textContent = 'Drop a video or audio file';
+    el.uploadSelected.hidden = true;
+    el.uploadName.textContent = '';
+    updateUploadCopy();
+    return;
+  }
+
+  if (!isMediaFile(file)) {
+    state.file = null;
+    el.fileInput.value = '';
+    showUploadError('Choose a video or audio file — MP4, MOV, WEBM, MP3, WAV.');
+    return;
+  }
+
+  const limit = state.maxUploadMb * 1024 * 1024;
+  if (file.size > limit) {
+    state.file = null;
+    el.fileInput.value = '';
+    showUploadError(
+      `That file is ${formatBytes(file.size)}. The maximum here is ${maxUploadLabel()}.`
+    );
+    return;
+  }
+
+  state.file = file;
+  el.dropzone.classList.add('has-file');
+  el.dropTitle.textContent = file.name;
+  el.uploadSelected.hidden = false;
+  el.uploadName.textContent = `Ready to transcribe · ${formatBytes(file.size)}`;
+  updateUploadCopy();
+}
+
+function applyStepLabels(mode) {
+  const labels =
+    mode === 'upload'
+      ? ['Receive file', 'Listen', 'Translate', 'Build document']
+      : ['Read video', 'Fetch captions', 'Translate', 'Build document'];
+
+  $$('#miniSteps li').forEach((item, index) => {
+    item.textContent = labels[index] || item.textContent;
+  });
+}
+
+function setMode(mode) {
+  state.mode = mode === 'upload' ? 'upload' : 'youtube';
+  const upload = state.mode === 'upload';
+
+  el.tabYt.classList.toggle('is-active', !upload);
+  el.tabUpload.classList.toggle('is-active', upload);
+  el.tabYt.setAttribute('aria-pressed', String(!upload));
+  el.tabUpload.setAttribute('aria-pressed', String(upload));
+
+  el.youtubeField.hidden = upload;
+  el.uploadField.hidden = !upload;
+  clearUrlError();
+  clearUploadError();
+
+  el.fineprint.textContent = upload
+    ? 'Uploads stay on this server, are transcribed with Whisper, and are deleted when the document is ready.'
+    : 'Works with videos that have captions — manual or auto-generated. Nothing is stored beyond this session.';
+
+  if (!state.running) {
+    el.goText.textContent = upload ? 'Transcribe the upload' : 'Transcribe & translate';
+  }
+  updateUploadCopy();
+  applyStepLabels(state.mode);
+
+  if (upload) {
+    el.preview.hidden = true;
+  } else if (el.url.value.trim() && extractVideoId(el.url.value)) {
+    loadPreview(el.url.value, true);
+  }
+}
+
+el.tabYt.addEventListener('click', () => {
+  if (!state.running) setMode('youtube');
+});
+
+el.tabUpload.addEventListener('click', () => {
+  if (!state.running) setMode('upload');
+});
+
+el.fileInput.addEventListener('change', () => {
+  setFile(el.fileInput.files?.[0] || null);
+});
+
+el.clearFile.addEventListener('click', () => setFile(null));
+
+for (const eventName of ['dragenter', 'dragover']) {
+  el.dropzone.addEventListener(eventName, (event) => {
+    event.preventDefault();
+    el.dropzone.classList.add('is-drag');
+  });
+}
+
+el.dropzone.addEventListener('dragleave', (event) => {
+  if (event.target === el.dropzone) el.dropzone.classList.remove('is-drag');
+});
+
+el.dropzone.addEventListener('drop', (event) => {
+  event.preventDefault();
+  el.dropzone.classList.remove('is-drag');
+  const file = event.dataTransfer?.files?.[0];
+  if (file) setFile(file);
+});
+
+setMode('youtube');
+
+/* ------------------------------------------------------------------ */
 /* Url preview                                                         */
 /* ------------------------------------------------------------------ */
 
@@ -496,6 +709,9 @@ function readHistory() {
 }
 
 function rememberJob(transcript) {
+  // Uploaded files cannot be reopened later, so they do not belong in Recent.
+  if (transcript.uploaded) return;
+
   const entry = {
     id: transcript.id,
     title: transcript.title,
@@ -585,11 +801,20 @@ el.clearRecent.addEventListener('click', () => {
 
 function renderDocHeader(video) {
   const language = languageByCode(state.jobLang);
+  const uploaded = Boolean(video.uploaded);
 
-  el.thumbLink.href = video.url;
-  el.thumbLink.setAttribute('aria-label', `Open “${video.title}” on YouTube`);
-  el.thumbImg.alt = video.title;
-  setThumbnail(el.thumbImg, video.thumb, video.id);
+  el.thumbLink.hidden = uploaded;
+  el.thumbLink.href = video.url || '#';
+  el.thumbLink.setAttribute(
+    'aria-label',
+    uploaded ? 'Uploaded file' : `Open “${video.title}” on YouTube`
+  );
+  $('.doc-head', el.doc).classList.toggle('no-thumb', uploaded);
+
+  if (!uploaded) {
+    el.thumbImg.alt = video.title;
+    setThumbnail(el.thumbImg, video.thumb, video.id);
+  }
 
   el.docTitle.textContent = video.title;
   el.docChannel.textContent = video.channel;
@@ -597,10 +822,12 @@ function renderDocHeader(video) {
   el.docStats.textContent = 'Preparing transcript…';
   el.docLangBadge.textContent = language.native;
   el.docLangBadge.title = `${language.english} (${language.code})`;
-  el.docSource.textContent = video.hasCaptions
-    ? `${video.sourceLanguage || 'Caption'} captions${video.track?.auto ? ' · auto-generated' : ''}`
-    : 'Checking captions…';
-  el.docUrl.textContent = video.url;
+  el.docSource.textContent = uploaded
+    ? 'Speech recognition'
+    : video.hasCaptions
+      ? `${video.sourceLanguage || 'Caption'} captions${video.track?.auto ? ' · auto-generated' : ''}`
+      : 'Checking captions…';
+  el.docUrl.textContent = video.url || 'Uploaded file · deleted after processing';
   el.docBody.lang = language.code;
   el.docBody.dir = 'auto';
 }
@@ -687,13 +914,14 @@ function appendBlocks(blocks) {
   el.docBody.append(fragment);
 }
 
-function updateProgress(completed, total, detected) {
+function updateProgress(completed, total, detected, overall) {
   if (!total) return;
   const ratio = Math.min(1, completed / total);
+  const shown = typeof overall === 'number' ? overall : ratio;
 
   el.bar.classList.remove('indeterminate');
-  el.barFill.style.width = `${Math.max(6, Math.round(ratio * 100))}%`;
-  el.workPct.textContent = `${Math.round(ratio * 100)}%`;
+  el.barFill.style.width = `${Math.max(6, Math.round(shown * 100))}%`;
+  el.workPct.textContent = `${Math.round(shown * 100)}%`;
 
   const language = languageByCode(state.jobLang);
   el.docProgress.hidden = false;
@@ -703,7 +931,9 @@ function updateProgress(completed, total, detected) {
       : `Translating — ${completed} of ${total} passages`;
 
   if (detected && detected !== language.code) {
-    el.docSource.textContent = `From ${formatDetected(detected)} captions`;
+    el.docSource.textContent = state.mode === 'upload'
+      ? `From ${formatDetected(detected)} speech`
+      : `From ${formatDetected(detected)} captions`;
   }
 }
 
@@ -729,6 +959,13 @@ el.goBtn.addEventListener('click', (event) => {
 });
 
 function submitFromForm() {
+  if (state.running) return;
+
+  if (state.mode === 'upload') {
+    startUpload();
+    return;
+  }
+
   const raw = el.url.value.trim();
   if (!raw) {
     showUrlError('Paste a YouTube link to begin.');
@@ -766,17 +1003,23 @@ function resetStage() {
   el.warnBanner.hidden = true;
   el.warnBanner.textContent = '';
   el.langPrompt.hidden = true;
+  state.video = null;
   el.docProgress.hidden = true;
-  el.docProgressText.textContent = 'Fetching captions…';
+  el.docProgressText.textContent =
+    state.mode === 'upload' ? 'Reading the file…' : 'Fetching captions…';
   setDocActions(false);
 
   el.workCard.hidden = false;
   el.workCard.classList.remove('hidden');
-  el.workTitle.textContent = 'Reading the video…';
+  el.workTitle.textContent = state.mode === 'upload' ? 'Reading the file…' : 'Reading the video…';
   el.workPct.textContent = '0%';
-  el.workNote.textContent = 'Hang tight — longer videos take a little longer.';
+  el.workNote.textContent =
+    state.mode === 'upload'
+      ? 'Whisper listens on this server — the first run may download a model.'
+      : 'Hang tight — longer videos take a little longer.';
   el.bar.classList.add('indeterminate');
   el.barFill.style.width = '0%';
+  applyStepLabels(state.mode);
 
   for (const item of $$('#miniSteps li')) {
     item.classList.toggle('active', item.dataset.step === '0');
@@ -786,9 +1029,15 @@ function resetStage() {
 
 function setBusy(busy) {
   state.running = busy;
-  el.goBtn.disabled = busy;
+  el.goBtn.disabled = busy || (state.mode === 'upload' && !state.uploadsAvailable);
   el.goBtn.classList.toggle('is-busy', busy);
-  el.goText.textContent = busy ? 'Preparing transcript…' : 'Transcribe & translate';
+  el.goText.textContent = busy
+    ? 'Preparing transcript…'
+    : state.mode === 'upload'
+      ? 'Transcribe the upload'
+      : 'Transcribe & translate';
+  el.tabYt.disabled = busy;
+  el.tabUpload.disabled = busy;
   $('#stage').setAttribute('aria-busy', String(busy));
 }
 
@@ -800,13 +1049,20 @@ function startJob(rawUrl) {
     showUrlError('Paste a valid YouTube video link.');
     return;
   }
+  if (state.running) return;
+  if (state.mode !== 'youtube') setMode('youtube');
 
   if (state.es) {
     state.es.close();
     state.es = null;
   }
+  if (state.uploadAbort) {
+    state.uploadAbort.abort();
+    state.uploadAbort = null;
+  }
 
   state.lastUrl = rawUrl;
+  state.lastMode = 'youtube';
   state.jobLang = language;
   resetStage();
   setBusy(true);
@@ -817,66 +1073,205 @@ function startJob(rawUrl) {
   const source = new EventSource(`/api/process?${params.toString()}`);
   state.es = source;
 
-  source.addEventListener('meta', (event) => {
-    const data = JSON.parse(event.data);
-    if (!data.video) return;
-    state.video = data.video;
-    renderDocHeader(data.video);
-
-    el.workCard.hidden = true;
-    el.doc.hidden = false;
-    el.empty.hidden = true;
-    el.docProgress.hidden = false;
-    el.docProgressText.textContent = 'Fetching the caption track…';
-
-    if (window.matchMedia('(max-width: 940px)').matches) {
-      requestAnimationFrame(() => {
-        el.doc.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      });
-    }
-  });
-
-  source.addEventListener('stage', (event) => {
-    const data = JSON.parse(event.data);
-    if (typeof data.step === 'number') updateStep(data.step, data.message);
-    if (data.message) {
-      el.workNote.textContent = data.message;
-      if (!el.doc.hidden) el.docProgressText.textContent = data.message;
-    }
-    if (typeof data.progress === 'number') {
-      el.bar.classList.remove('indeterminate');
-      el.barFill.style.width = `${Math.max(4, Math.round(data.progress * 100))}%`;
-      el.workPct.textContent = `${Math.round(data.progress * 100)}%`;
-    }
-  });
-
-  source.addEventListener('progress', (event) => {
-    const data = JSON.parse(event.data);
-    appendBlocks(data.blocks);
-    updateProgress(data.completed, data.total, data.detected);
-    el.docProgress.hidden = false;
-  });
-
-  source.addEventListener('done', (event) => {
-    const data = JSON.parse(event.data);
-    finishJob(data.transcript);
-  });
-
-  source.addEventListener('fail', (event) => {
-    const data = JSON.parse(event.data);
-    failJob(data);
-  });
+  source.addEventListener('meta', (event) => handleMeta(JSON.parse(event.data)));
+  source.addEventListener('stage', (event) => handleStage(JSON.parse(event.data)));
+  source.addEventListener('progress', (event) => handleProgress(JSON.parse(event.data)));
+  source.addEventListener('done', (event) => handleDone(JSON.parse(event.data)));
+  source.addEventListener('fail', (event) => handleFail(JSON.parse(event.data)));
 
   source.onerror = () => {
     if (state.finished) return;
     source.close();
     state.es = null;
-    failJob({
+    handleFail({
       title: 'The connection ended',
       message: 'The transcript stream stopped before it finished.',
       hint: 'Try again. Completed videos stay cached, so a retry is usually quick.'
     });
   };
+}
+
+function startUpload() {
+  if (state.running) return;
+  const file = state.file;
+
+  if (!file) {
+    showUploadError('Choose a video or audio file first.');
+    return;
+  }
+  if (!isMediaFile(file)) {
+    showUploadError('Choose a video or audio file — MP4, MOV, WEBM, MP3, WAV.');
+    return;
+  }
+  if (file.size > state.maxUploadMb * 1024 * 1024) {
+    showUploadError(
+      `That file is ${formatBytes(file.size)}. The maximum here is ${maxUploadLabel()}.`
+    );
+    return;
+  }
+
+  const language = el.lang.value || 'ta';
+  if (state.es) {
+    state.es.close();
+    state.es = null;
+  }
+  if (state.uploadAbort) state.uploadAbort.abort();
+
+  state.lastMode = 'upload';
+  state.lastUrl = '';
+  state.jobLang = language;
+  resetStage();
+  setBusy(true);
+
+  el.docProgressText.textContent = 'Receiving the file…';
+
+  const controller = new AbortController();
+  state.uploadAbort = controller;
+
+  const params = new URLSearchParams({ lang: language, name: file.name });
+
+  fetch(`/api/upload?${params.toString()}`, {
+    method: 'POST',
+    body: file,
+    signal: controller.signal,
+    headers: { 'Content-Type': file.type || 'application/octet-stream' }
+  })
+    .then(async (response) => {
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        handleFail(
+          payload?.error || {
+            title: 'The upload was rejected',
+            message: `The server answered with ${response.status}.`,
+            hint: 'Try again, or choose a smaller file.'
+          }
+        );
+        return;
+      }
+      await readEventStream(response);
+    })
+    .catch((error) => {
+      if (error?.name === 'AbortError' || state.finished) return;
+      handleFail({
+        title: 'The upload did not finish',
+        message: error?.message || 'The connection to the server ended.',
+        hint: 'Check that Vaani is still running, then try again.'
+      });
+    })
+    .finally(() => {
+      if (state.uploadAbort === controller) state.uploadAbort = null;
+    });
+}
+
+// The upload endpoint answers with the same SSE events as the YouTube stream,
+// but over a POST response that we read manually.
+async function readEventStream(response) {
+  if (!response.body) throw new Error('This browser cannot read the response stream');
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  const handleFrame = (frame) => {
+    let event = 'message';
+    const data = [];
+
+    for (const line of frame.split('\n')) {
+      if (!line || line.startsWith(':')) continue;
+      if (line.startsWith('event:')) event = line.slice(6).trim();
+      else if (line.startsWith('data:')) data.push(line.slice(5).replace(/^ /, ''));
+    }
+
+    if (!data.length) return;
+
+    let payload;
+    try {
+      payload = JSON.parse(data.join('\n'));
+    } catch {
+      return;
+    }
+
+    if (event === 'meta') handleMeta(payload);
+    else if (event === 'stage') handleStage(payload);
+    else if (event === 'progress') handleProgress(payload);
+    else if (event === 'done') handleDone(payload);
+    else if (event === 'fail') handleFail(payload);
+  };
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let boundary;
+    while ((boundary = buffer.indexOf('\n\n')) !== -1) {
+      handleFrame(buffer.slice(0, boundary));
+      buffer = buffer.slice(boundary + 2);
+    }
+  }
+
+  if (buffer.trim()) handleFrame(buffer);
+}
+
+function handleMeta(data) {
+  if (!data?.video) return;
+  state.video = data.video;
+  renderDocHeader(data.video);
+
+  // Uploads keep the big progress card while Whisper listens; YouTube metadata
+  // arrives with captions already in hand, so the document takes over.
+  el.workCard.hidden = !data.video.uploaded;
+  el.doc.hidden = Boolean(data.video.uploaded);
+  el.empty.hidden = true;
+  el.docProgress.hidden = false;
+  el.docProgressText.textContent = data.video.uploaded
+    ? 'Listening for speech…'
+    : 'Fetching the caption track…';
+
+  if (!data.video.uploaded && window.matchMedia('(max-width: 940px)').matches) {
+    requestAnimationFrame(() => {
+      el.doc.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
+}
+
+function handleStage(data) {
+  if (typeof data.step === 'number') updateStep(data.step, data.message);
+  if (data.message) {
+    el.workNote.textContent = data.message;
+    if (!el.doc.hidden) el.docProgressText.textContent = data.message;
+  }
+  if (typeof data.progress === 'number') {
+    el.bar.classList.remove('indeterminate');
+    el.barFill.style.width = `${Math.max(4, Math.round(data.progress * 100))}%`;
+    el.workPct.textContent = `${Math.round(data.progress * 100)}%`;
+  }
+
+  // Speech-to-text is done: swap the progress card for the document.
+  if (state.video?.uploaded && data.step >= 2) {
+    el.workCard.hidden = true;
+    el.doc.hidden = false;
+    if (window.matchMedia('(max-width: 940px)').matches) {
+      requestAnimationFrame(() => {
+        el.doc.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
+  }
+}
+
+function handleProgress(data) {
+  el.doc.hidden = false;
+  appendBlocks(data.blocks);
+  updateProgress(data.completed, data.total, data.detected, data.overall);
+  el.docProgress.hidden = false;
+}
+
+function handleDone(data) {
+  if (data?.transcript) finishJob(data.transcript);
+}
+
+function handleFail(data) {
+  failJob(data || {});
 }
 
 function updateStep(step, message) {
@@ -886,7 +1281,10 @@ function updateStep(step, message) {
     item.classList.toggle('done', index < step);
   }
 
-  const labels = ['Reading the video…', 'Fetching captions…', 'Translating…', 'Preparing your document…'];
+  const labels =
+    state.mode === 'upload'
+      ? ['Reading the file…', 'Listening for speech…', 'Translating…', 'Preparing your document…']
+      : ['Reading the video…', 'Fetching captions…', 'Translating…', 'Preparing your document…'];
   if (!message) el.workTitle.textContent = labels[step] || 'Working…';
   else el.workTitle.textContent = message;
 
@@ -1009,12 +1407,15 @@ function buildPartialTranscript() {
     channel: state.video?.channel || '',
     duration: state.video?.duration || 0,
     thumb: state.video?.thumb || '',
-    url: state.video?.url || state.lastUrl,
+    url: state.video?.url || '',
+    uploaded: Boolean(state.video?.uploaded),
     chapters: state.video?.chapters || [],
     lang: { code: language.code, english: language.english, native: language.native },
     source: {
       code: '',
-      name: state.video?.sourceLanguage || 'YouTube',
+      name: state.video?.uploaded
+        ? 'Whisper speech recognition'
+        : state.video?.sourceLanguage || 'YouTube',
       auto: Boolean(state.video?.track?.auto)
     },
     detected: '',
@@ -1039,6 +1440,10 @@ function buildPartialTranscript() {
 }
 
 el.retryBtn.addEventListener('click', () => {
+  if (state.lastMode === 'upload' && state.file) {
+    startUpload();
+    return;
+  }
   if (!state.lastUrl) {
     el.errorCard.hidden = true;
     el.empty.hidden = false;
@@ -1054,6 +1459,10 @@ el.dismissBtn.addEventListener('click', () => {
 
 el.langSwitchBtn.addEventListener('click', () => {
   if (state.running) return;
+  if (state.transcript?.uploaded && state.file) {
+    startUpload();
+    return;
+  }
   const url = state.transcript?.url || state.lastUrl;
   if (url) startJob(url);
 });
@@ -1072,10 +1481,12 @@ function buildPlainText() {
   if (transcript.duration) meta.push(formatDuration(transcript.duration));
   meta.push(plural(transcript.words, 'word'));
   lines.push(meta.filter(Boolean).join(' · '));
-  lines.push(`Source: ${transcript.url}`);
+  if (transcript.url) lines.push(`Source: ${transcript.url}`);
   lines.push(`Language: ${transcript.lang.english} (${transcript.lang.native})`);
   lines.push(
-    `Captions: ${transcript.source.name}${transcript.source.auto ? ' (auto-generated)' : ''}`
+    transcript.uploaded
+      ? `Speech: ${transcript.source.name}`
+      : `Captions: ${transcript.source.name}${transcript.source.auto ? ' (auto-generated)' : ''}`
   );
   lines.push(`Prepared: ${new Date(transcript.createdAt).toLocaleString()}`);
   lines.push('');
@@ -1183,6 +1594,7 @@ $$('.tool').forEach((button) => {
 initPreferences();
 renderHistory();
 loadLanguages();
+loadCapabilities();
 
 // Keep relative times in the recent list honest.
 setInterval(() => {
