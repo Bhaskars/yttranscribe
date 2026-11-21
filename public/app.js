@@ -28,7 +28,7 @@ const state = {
   mode: 'youtube',
   file: null,
   uploadAbort: null,
-  maxUploadMb: 600,
+  maxUploadMb: 500,
   uploadsAvailable: true,
   uploadIssue: '',
   jobLang: 'ta',

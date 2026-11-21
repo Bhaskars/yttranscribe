@@ -71,7 +71,7 @@ MP3, WAV, M4A, AAC, OGG or FLAC. The server:
 4. transcribes the audio with Whisper, and
 5. deletes the temporary audio as soon as the document is ready.
 
-The default limit is **600 MB** locally. It is enforced on the client (with the
+The default limit is **500 MB** locally. It is enforced on the client (with the
 size shown in the upload panel) and on the server, and can be changed with
 `MAX_UPLOAD_MB`. On Vercel the limit is 4 MB because of the platform's request
 body cap — uploads also need Whisper, which the deployment does not bundle, so
@@ -81,6 +81,23 @@ The first transcription downloads the chosen Whisper model into
 `~/.cache/whisper` (about 140 MB for the default `base` model). If that download
 is blocked by a TLS-inspecting proxy, fetch the model once with `curl` or set
 `WHISPER_MODEL_DIR` to a folder that already contains it.
+
+## Putting it online with uploads
+
+Vercel only runs the YouTube flow: serverless functions cap request bodies at
+about 4.5 MB and cannot bundle ffmpeg or Whisper. To use 500 MB uploads from a
+public URL, run Vaani on a container host, or expose your own machine with a
+tunnel. For a quick tunnel:
+
+```bash
+VAANI_USER=vaani VAANI_PASS='choose-a-password' npm start
+cloudflared tunnel --url http://127.0.0.1:4173
+```
+
+The printed `https://…trycloudflare.com` URL then serves the full app with
+uploads. Keep the machine awake while the tunnel is in use, and stop it with
+`pkill -f "cloudflared tunnel"`. Basic auth is optional but recommended for any
+public tunnel, since the upload endpoint accepts large files.
 
 ## How it works
 
@@ -120,7 +137,8 @@ browser ◀── SSE: meta · stage · progress · done / fail ──┘
 | `YOUTUBE_COOKIES_B64` | — | Base64 Netscape cookie file, for hosts YouTube challenges |
 | `YOUTUBE_COOKIES` | — | Same cookies as raw text (alternative to base64) |
 | `YTDLP_PROXY` | — | HTTP/SOCKS proxy passed to yt-dlp (`http://user:pass@host:port`) |
-| `MAX_UPLOAD_MB` | `600` (4 on Vercel) | Largest accepted upload |
+| `MAX_UPLOAD_MB` | `500` (4 on Vercel) | Largest accepted upload |
+| `VAANI_USER` / `VAANI_PASS` | — | Optional HTTP basic auth, for tunnels and public hosts |
 | `WHISPER_BIN` | `whisper` | Path to the Whisper CLI |
 | `WHISPER_MODEL` | `base` | `tiny`, `base`, `small`, `medium` or `large-v3` |
 | `WHISPER_MODEL_DIR` | `~/.cache/whisper` | Where model files live |

@@ -25,7 +25,31 @@ const HOST = process.env.HOST || '0.0.0.0';
 // Vercel caps function request bodies at ~4.5 MB, so be explicit there. Locally
 // the limit is generous because the file never leaves the machine.
 const UPLOAD_MAX_MB =
-  Number(process.env.MAX_UPLOAD_MB) || (process.env.VERCEL ? 4 : 600);
+  Number(process.env.MAX_UPLOAD_MB) || (process.env.VERCEL ? 4 : 500);
+
+// Optional HTTP basic auth. Turn it on when the app is exposed through a
+// tunnel or otherwise reachable from the internet; local use needs no auth.
+const AUTH_USER = process.env.VAANI_USER || '';
+const AUTH_PASS = process.env.VAANI_PASS || '';
+const AUTH_ON = Boolean(AUTH_USER && AUTH_PASS);
+
+function isAuthorized(req, res) {
+  if (!AUTH_ON) return true;
+
+  const header = String(req.headers.authorization || '');
+  const [scheme, encoded] = header.split(' ');
+  if (scheme === 'Basic' && encoded) {
+    const [user, ...rest] = Buffer.from(encoded, 'base64').toString('utf8').split(':');
+    if (user === AUTH_USER && rest.join(':') === AUTH_PASS) return true;
+  }
+
+  res.writeHead(401, {
+    'WWW-Authenticate': 'Basic realm="Vaani", charset="UTF-8"',
+    'Content-Type': 'text/plain; charset=utf-8'
+  });
+  res.end('Vaani is private. Sign in to continue.');
+  return false;
+}
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -696,6 +720,8 @@ export async function handler(req, res) {
     return;
   }
 
+  if (!isAuthorized(req, res)) return;
+
   const isUpload = req.method === 'POST' && pathname === '/api/upload';
   if (!isUpload && req.method !== 'GET' && req.method !== 'HEAD') {
     sendJson(res, 405, { error: 'Method not allowed' });
@@ -825,6 +851,7 @@ if (isDirectRun) {
   server.listen(PORT, HOST, () => {
     console.log(`\n  Vaani · transcript studio`);
     console.log(`  → http://localhost:${PORT}\n`);
+    if (AUTH_ON) console.log(`  Basic auth on (user: ${AUTH_USER})\n`);
     hasYtdlp().then((yt) => {
       console.log(
         yt.available
